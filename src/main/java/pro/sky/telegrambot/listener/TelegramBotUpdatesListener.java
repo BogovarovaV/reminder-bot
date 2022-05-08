@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import pro.sky.telegrambot.model.NotificationTask;
+import pro.sky.telegrambot.model.Reminders;
 import pro.sky.telegrambot.repository.NotificationTaskRepository;
 
 import javax.annotation.PostConstruct;
@@ -50,6 +50,7 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
                         "Привет! Этот бот создан для того, чтобы ты не забыл(а) о своих важных делах ;) " +
                                 "\nДля создания напоминания, отправь сообщение вида \"01.01.2022 20:00 Сделать домашнюю работу\", " +
                                 "указав дату и время, в которые ты хочешь получить напоминание, и его текст."));
+                logger.info("User has received greetings");
             } else {
                 try {
                     parseMessage(message);
@@ -66,18 +67,28 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
         Matcher matcher = pattern.matcher(message.text());
         if (matcher.matches()) {
             String dateTime = matcher.group(1);
+            logger.info("Date: " + dateTime);
             String text = matcher.group(3);
+            logger.info("Text: " + text);
             LocalDateTime reminderDateTime = LocalDateTime.parse(dateTime,
                     DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
-            repository.save(new NotificationTask(getChatId(message), text, reminderDateTime));
+            Reminders result = new Reminders();
+            result.setChatId(getChatId(message));
+            result.setReminderText(text);
+            result.setDateTime(reminderDateTime);
+            logger.info(String.valueOf(result));
+            repository.save(result);
+            logger.info("Reminder is saved");
             telegramBot.execute(new SendMessage(getChatId(message),
                     "Я напомню тебе о задаче \"" + text + "\" " + dateTime));
+            logger.info("User has received a confirmation");
         } else {
-            logger.error("Can not parse reminder message: " + message);
+            logger.error("Can not parse reminder message: " + message.text());
             telegramBot.execute(new SendMessage(getChatId(message),
                     "Упс, не могу понять, что ты написал(а) :) " +
                             "Пожалуйста, отправь сообщение вида " +
                             "\"01.01.2022 20:00 Сделать домашнюю работу\"."));
+            logger.info("User has received an advice");
         }
     }
 
@@ -85,17 +96,18 @@ public class TelegramBotUpdatesListener implements UpdatesListener {
     public void getScheduledMessage() {
         try {
             LocalDateTime currentTime = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
-            List<NotificationTask> notifications = repository.findByDateAndTimeEquals(currentTime);
+            List<Reminders> notifications = repository.findByDateTimeEquals(currentTime);
             logger.info("Finding...");
-            for (NotificationTask task : notifications) {
+            for (Reminders task : notifications) {
                 if (task != null) {
                     telegramBot.execute(new SendMessage(task.getChatId(),
-                            "Ты просил(а) напомнить о задаче: " + task));
+                            "Ты просил(а) напомнить о задаче: " + task.getReminderText()));
                     logger.info("Reminders are sent");
                 }
             }
+            logger.info("No new reminders for this moment");
         } catch (RuntimeException e) {
-            logger.info("No reminders for this moment");
+            logger.info("RuntimeException was sent");
             throw new RuntimeException();
         }
     }
